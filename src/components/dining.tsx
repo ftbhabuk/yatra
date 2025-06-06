@@ -1,609 +1,629 @@
-"use client"
-import React, { useEffect, useRef, useState } from "react"
-import { X, Phone, MapPin, Star } from "lucide-react"
 
-// Define types for Google Maps objects and place data
+"use client";
+import React, { useEffect, useRef, useState } from "react";
+import { X, Phone, MapPin, Star, ChevronLeft, ChevronRight, BedDouble, Utensils, Home, Building, Tent } from "lucide-react";
+
 interface Review {
-  author_name: string
-  rating: number
-  text: string
-  relative_time_description: string
+  author_name: string;
+  rating: number;
+  text: string;
+  relative_time_description: string;
 }
 
 interface Place {
-  place_id: string
-  name: string
-  geometry?: {
-    location: google.maps.LatLng
-  }
-  formatted_address?: string
-  vicinity?: string
-  formatted_phone_number?: string
-  website?: string
-  opening_hours?: {
-    isOpen: () => boolean
-    weekday_text?: string[]
-  }
-  rating?: number
-  user_ratings_total?: number
-  photos?: {
-    getUrl: (options: { maxWidth: number, maxHeight: number }) => string
-  }[]
-  index?: number
-  category?: string
-  reviews?: Review[]
+  place_id: string;
+  name: string;
+  geometry?: { location: google.maps.LatLng };
+  formatted_address?: string;
+  vicinity?: string;
+  formatted_phone_number?: string;
+  website?: string;
+  opening_hours?: { isOpen: () => boolean; weekday_text?: string[] };
+  rating?: number;
+  user_ratings_total?: number;
+  photos?: { getUrl: (options: { maxWidth: number; maxHeight: number }) => string }[];
+  index?: number;
+  category?: string;
+  reviews?: Review[];
 }
 
-type GoogleMap = google.maps.Map
-type GoogleMarker = google.maps.Marker
-type GoogleInfoWindow = google.maps.InfoWindow
+type GoogleMap = google.maps.Map;
+type GoogleMarker = google.maps.Marker;
+type GoogleInfoWindow = google.maps.InfoWindow;
 
 const placeTypes = [
-  { id: "lodging", label: "Hotels", category: "Hotel", color: "#3B82F6" },
-  { id: "restaurant", label: "Restaurants", category: "Restaurant", color: "#EF4444" },
-  { id: "homestay", label: "Homestays", category: "Homestay", color: "#10B981" },
-  { id: "hostel", label: "Hostels", category: "Hostel", color: "#F59E0B" },
-  { id: "vacation_rental", label: "Vacation Rentals", category: "Vacation Rental", color: "#8B5CF6" },
-] as const
+  { id: "lodging", label: "Hotels", category: "Hotel", color: "blue-500", Icon: BedDouble },
+  { id: "restaurant", label: "Restaurants", category: "Restaurant", color: "red-500", Icon: Utensils },
+  { id: "homestay", label: "Homestays", category: "Homestay", color: "emerald-500", Icon: Home },
+  { id: "hostel", label: "Hostels", category: "Hostel", color: "amber-500", Icon: Building },
+  { id: "vacation_rental", label: "Vacation Rentals", category: "Vacation Rental", color: "violet-500", Icon: Tent },
+] as const;
+
+const useHoverScroll = () => {
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const { left, width } = el.getBoundingClientRect();
+      const mouseX = e.clientX - left;
+      const scrollSpeed = 0.5;
+
+      if (mouseX < width * 0.15) {
+        el.scrollLeft -= scrollSpeed * (width * 0.15 - mouseX);
+      } else if (mouseX > width * 0.85) {
+        el.scrollLeft += scrollSpeed * (mouseX - width * 0.85);
+      }
+    };
+
+    el.addEventListener("mousemove", handleMouseMove);
+    return () => el.removeEventListener("mousemove", handleMouseMove);
+  }, []);
+
+  return scrollRef;
+};
+
+const PlaceCategoryRow = ({ typeInfo, places, onPlaceClick, onShowInMapClick }: { 
+  typeInfo: typeof placeTypes[number]; 
+  places: Place[]; 
+  onPlaceClick: (place: Place) => void; 
+  onShowInMapClick: (place: Place, e: React.MouseEvent) => void; 
+}) => {
+  const scrollRef = useHoverScroll();
+  const { color, Icon, category } = typeInfo;
+
+  const scroll = (direction: "left" | "right") => {
+    if (scrollRef.current) {
+      const scrollAmount = scrollRef.current.clientWidth * 0.8;
+      scrollRef.current.scrollBy({
+        left: direction === "left" ? -scrollAmount : scrollAmount,
+        behavior: "smooth",
+      });
+    }
+  };
+
+  if (places.length === 0) return null;
+
+  const headingText = {
+    Hotel: "Serene Stays & Luxurious Hotels",
+    Restaurant: "Culinary Delights & Finest Dining",
+    Homestay: "Cozy Homestays & Local Charm",
+    Hostel: "Vibrant Hostels for the Modern Traveler",
+    "Vacation Rental": "Your Perfect Vacation Rentals",
+  };
+
+  return (
+    <div className="mb-12 relative">
+      <div className="flex justify-between items-center mb-4">
+        <div className={`flex items-center space-x-2 border-l-4 border-${color} pl-3`}>
+          <Icon className={`w-6 h-6 text-${color}`} />
+          <h2 className="text-2xl font-semibold text-gray-800">{headingText[category]}</h2>
+        </div>
+        <div className="flex items-center space-x-2">
+          <button onClick={() => scroll("left")} className="p-1.5 rounded-full bg-white shadow-sm hover:bg-gray-100 transition transform hover:scale-105">
+            <ChevronLeft className="w-5 h-5 text-gray-600" />
+          </button>
+          <button onClick={() => scroll("right")} className="p-1.5 rounded-full bg-white shadow-sm hover:bg-gray-100 transition transform hover:scale-105">
+            <ChevronRight className="w-5 h-5 text-gray-600" />
+          </button>
+        </div>
+      </div>
+      <div ref={scrollRef} className="flex space-x-4 overflow-x-auto snap-x snap-mandatory scroll-smooth pb-4 scrollbar-hide">
+        {places.map((place) => (
+          <PlaceCard key={place.place_id} place={place} color={color} onPlaceClick={onPlaceClick} onShowInMapClick={onShowInMapClick} />
+        ))}
+      </div>
+    </div>
+  );
+};
+
+const PlaceCard = ({ place, color, onPlaceClick, onShowInMapClick }: { 
+  place: Place; 
+  color: string; 
+  onPlaceClick: (place: Place) => void; 
+  onShowInMapClick: (place: Place, e: React.MouseEvent) => void; 
+}) => (
+  <div
+    onClick={() => onPlaceClick(place)}
+    className={`w-72 flex-shrink-0 bg-white rounded-lg shadow-md overflow-hidden hover:shadow-xl transition-all duration-300 cursor-pointer border-b-4 border-${color} hover:border-${color.replace("500", "600")}`}
+  >
+    <div className="relative h-44">
+      <img
+        src={place.photos?.[0]?.getUrl({ maxWidth: 400, maxHeight: 300 }) || "https://images.unsplash.com/photo-1566073771259-6a8506099945"}
+        alt={place.name}
+        className="w-full h-full object-cover rounded-t-lg transition-transform duration-500 hover:scale-105"
+        onError={(e) => {
+          e.currentTarget.src = "https://images.unsplash.com/photo-1566073771259-6a8506099945";
+        }}
+      />
+      <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent"></div>
+      <div className="absolute bottom-0 left-0 p-3">
+        <h3 className="font-semibold text-lg text-white truncate">{place.name}</h3>
+      </div>
+      <div className={`absolute top-2 right-2 bg-${color} text-white text-xs font-medium px-2 py-1 rounded-full shadow-sm`}>{place.category}</div>
+    </div>
+    <div className="p-3">
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center">
+          <Star className="w-4 h-4 text-yellow-400 fill-yellow-400 mr-1" />
+          <span className="text-sm font-medium text-gray-700">{place.rating?.toFixed(1) || "N/A"}</span>
+          <span className="text-xs text-gray-500 ml-1.5">({place.user_ratings_total || 0})</span>
+        </div>
+        {place.website && (
+          <a
+            href={place.website}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            className={`bg-${color} hover:bg-${color.replace("500", "600")} text-white py-1.5 px-3 rounded-md text-xs font-medium transition-colors`}
+          >
+            Book
+          </a>
+        )}
+      </div>
+      <div className="flex items-start text-gray-600 text-xs">
+        <MapPin className="h-4 w-4 mr-1.5 mt-0.5 flex-shrink-0 text-gray-400" />
+        <span className="line-clamp-1">{place.vicinity || place.formatted_address || "Address not available"}</span>
+      </div>
+    </div>
+    <div className="p-2 bg-gray-50 text-center">
+      <button
+        onClick={(e) => onShowInMapClick(place, e)}
+        className={`text-xs font-medium text-${color} hover:text-${color.replace("500", "600")} transition-colors`}
+      >
+        Show in Map
+      </button>
+    </div>
+  </div>
+);
 
 const HotelExplorer = () => {
-  const mapRef = useRef<HTMLDivElement>(null)
-  const listingRef = useRef<HTMLDivElement>(null)
-  const [places, setPlaces] = useState<Place[]>([])
-  const [selectedPlace, setSelectedPlace] = useState<Place | null>(null)
-  const [previewPlace, setPreviewPlace] = useState<Place | null>(null)
-  const [isLoading, setIsLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [mapInstance, setMapInstance] = useState<GoogleMap | null>(null)
-  const [markers, setMarkers] = useState<GoogleMarker[]>([])
-  const [infoWindow, setInfoWindow] = useState<GoogleInfoWindow | null>(null)
-  const [processedPlaceIds, setProcessedPlaceIds] = useState<Set<string>>(new Set())
-  const [isMapInitialized, setIsMapInitialized] = useState(false)
-  const [isMapVisible, setIsMapVisible] = useState(false)
-  const [location, setLocation] = useState("")
-  const [searchLocation, setSearchLocation] = useState<google.maps.LatLng | null>(null)
-  const [searchType, setSearchType] = useState<string>("lodging")
+  const mapRef = useRef<HTMLDivElement>(null);
+  const modalRef = useRef<HTMLDivElement>(null);
+  const [places, setPlaces] = useState<Record<string, Place[]>>({
+    Hotel: [], Restaurant: [], Homestay: [], Hostel: [], "Vacation Rental": [],
+  });
+  const [selectedPlace, setSelectedPlace] = useState<Place | null>(null);
+  const [previewPlace, setPreviewPlace] = useState<Place | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [mapInstance, setMapInstance] = useState<GoogleMap | null>(null);
+  const [markers, setMarkers] = useState<GoogleMarker[]>([]);
+  const [infoWindow, setInfoWindow] = useState<GoogleInfoWindow | null>(null);
+  const [isMapInitialized, setIsMapInitialized] = useState(false);
+  const [isMapVisible, setIsMapVisible] = useState(false);
+  const [location, setLocation] = useState("");
+  const [searchLocation, setSearchLocation] = useState<google.maps.LatLng | null>(null);
+  const [showAllReviews, setShowAllReviews] = useState(false);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (modalRef.current && !modalRef.current.contains(event.target as Node)) {
+        setPreviewPlace(null);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   const createMarker = (place: Place, map: GoogleMap) => {
-    if (!place.geometry || !place.geometry.location) return null
-
+    if (!place.geometry || !place.geometry.location) return null;
     try {
-      const placeType = placeTypes.find(pt => pt.category === place.category)
+      const placeType = placeTypes.find((pt) => pt.category === place.category);
       const markerIcon = {
-        path: window.google.maps.SymbolPath.CIRCLE,
-        fillColor: placeType?.color || "#3B82F6",
+        path: `M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z`,
+        fillColor: placeType?.color ? `var(--color-${placeType.color})` : "#3B82F6",
         fillOpacity: 1,
-        strokeColor: '#FFFFFF',
-        strokeWeight: 2,
-        scale: 12,
-      }
+        strokeWeight: 0,
+        rotation: 0,
+        scale: 1.5,
+        anchor: new google.maps.Point(12, 24),
+      };
 
       const marker = new window.google.maps.Marker({
         position: place.geometry.location,
         map,
         title: place.name,
-        label: {
-          text: place.index?.toString() || "",
-          color: 'white',
-          fontWeight: 'bold',
-          fontSize: '12px'
-        },
         icon: markerIcon,
-        animation: window.google.maps.Animation.DROP
-      })
+        animation: window.google.maps.Animation.DROP,
+      });
 
       marker.addListener("click", () => {
-        setSelectedPlace(place)
-        setPreviewPlace(place)
+        setPreviewPlace(place);
         if (infoWindow) {
           infoWindow.setContent(
-            `<div style="padding: 10px; max-width: 250px;">
-              <h3 style="font-weight: bold; margin-bottom: 6px; font-size: 16px;">${place.name}</h3>
-              <p style="font-size: 13px; margin: 4px 0;">${place.vicinity || place.formatted_address || ""}</p>
-              <p style="font-size: 13px; margin: 4px 0;">Rating: ${place.rating?.toFixed(1) || "N/A"} ⭐</p>
-              <p style="font-size: 13px; margin: 4px 0;">Reviews: ${place.user_ratings_total || 0}</p>
-              ${place.formatted_phone_number ? `<p style="font-size: 13px; margin: 4px 0;">Phone: ${place.formatted_phone_number}</p>` : ""}
+            `<div class="p-2 max-w-xs font-sans">
+              <h3 class="font-bold text-base mb-1 text-gray-800">${place.name}</h3>
+              <p class="text-xs text-gray-600">${place.vicinity || ""}</p>
             </div>`
-          )
-          infoWindow.open(map, marker)
+          );
+          infoWindow.open(map, marker);
         }
-        const listItem = document.getElementById(`place-${place.place_id}`)
-        if (listItem && listingRef.current) {
-          listingRef.current.scrollTop = listItem.offsetTop - listingRef.current.offsetTop
-        }
-      })
+      });
 
-      setMarkers(prev => [...prev, marker])
-      return marker
+      setMarkers((prev) => [...prev, marker]);
+      return marker;
     } catch (err) {
-      console.error("Error creating marker:", err)
-      return null
+      console.error("Error creating marker:", err);
+      return null;
     }
-  }
+  };
 
   useEffect(() => {
     const initMap = () => {
-      if (isMapInitialized) return
+      if (isMapInitialized) return;
       if (window.google && window.google.maps) {
-        setIsMapInitialized(true)
+        setIsMapInitialized(true);
       } else {
-        loadGoogleMapsScript()
+        const script = document.createElement("script");
+        const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || "YOUR_API_KEY_HERE";
+        script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places&callback=initGoogleMaps`;
+        script.async = true;
+        script.defer = true;
+        window.initGoogleMaps = () => setIsMapInitialized(true);
+        script.onerror = () => {
+          setError("Failed to load Google Maps. Please check your API key and connection.");
+          setIsLoading(false);
+        };
+        document.head.appendChild(script);
       }
-    }
+    };
 
-    const loadGoogleMapsScript = () => {
-      if (document.querySelector(`script[src*="maps.googleapis.com/maps/api/js"]`)) return
-      const script = document.createElement("script")
-      const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || "YOUR_API_KEY_HERE"
-      script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places&callback=initGoogleMaps`
-      script.async = true
-      script.defer = true
-      window.initGoogleMaps = () => setIsMapInitialized(true)
-      script.onerror = () => {
-        setError("Failed to load Google Maps. Please check your connection and try again.")
-        setIsLoading(false)
-      }
-      document.head.appendChild(script)
-    }
-
-    const fetchPlaces = (service: google.maps.places.PlacesService, locationCoords: google.maps.LatLng) => {
-      const newProcessedPlaceIds = new Set<string>()
-      let allResults: Place[] = []
-
-      try {
+    const fetchPlacesForType = (service: google.maps.places.PlacesService, locationCoords: google.maps.LatLng, placeTypeInfo: typeof placeTypes[number]) => {
+      return new Promise<void>((resolve, reject) => {
         const request = {
           location: locationCoords,
           radius: 5000,
-          type: searchType === "restaurant" ? "restaurant" : "lodging",
-          keyword: searchType === "homestay" ? "homestay guesthouse" :
-                   searchType === "hostel" ? "hostel" :
-                   searchType === "vacation_rental" ? "vacation rental apartment" : undefined
-        }
+          type: placeTypeInfo.id,
+          keyword: placeTypeInfo.id === "homestay" ? "homestay guesthouse" :
+                   placeTypeInfo.id === "hostel" ? "hostel" :
+                   placeTypeInfo.id === "vacation_rental" ? "vacation rental apartment" : undefined,
+        };
 
         service.nearbySearch(request, (results, status) => {
-          if (status === window.google.maps.places.PlacesServiceStatus.OK && results && results.length > 0) {
-            let detailRequestsCompleted = 0
-            const totalRequests = results.length
-
-            results.forEach((place) => {
-              if (newProcessedPlaceIds.has(place.place_id)) {
-                detailRequestsCompleted++
-                return
-              }
-
-              newProcessedPlaceIds.add(place.place_id)
-              service.getDetails(
-                {
-                  placeId: place.place_id,
-                  fields: [
-                    "name", "place_id", "geometry", "formatted_address", "vicinity",
-                    "formatted_phone_number", "website", "opening_hours",
-                    "rating", "user_ratings_total", "photos", "reviews"
-                  ]
-                },
-                (placeDetails, detailStatus) => {
-                  detailRequestsCompleted++
-                  if (detailStatus === window.google.maps.places.PlacesServiceStatus.OK && placeDetails) {
-                    const placeType = placeTypes.find(pt => pt.id === searchType)
-                    const enrichedPlace: Place = {
-                      ...placeDetails,
-                      category: placeType?.category || "Place",
-                      index: allResults.length + 1
+          if (status === window.google.maps.places.PlacesServiceStatus.OK && results) {
+            const detailPromises = results.map((place) =>
+              new Promise<Place | null>((resolve) => {
+                service.getDetails(
+                  {
+                    placeId: place.place_id,
+                    fields: ["name", "place_id", "geometry", "formatted_address", "vicinity", "formatted_phone_number", "website", "opening_hours", "rating", "user_ratings_total", "photos", "reviews"],
+                  },
+                  (placeDetails, detailStatus) => {
+                    if (detailStatus === window.google.maps.places.PlacesServiceStatus.OK && placeDetails) {
+                      resolve({ ...placeDetails, category: placeTypeInfo.category });
+                    } else {
+                      resolve(null);
                     }
-                    allResults.push(enrichedPlace)
                   }
-
-                  if (detailRequestsCompleted === totalRequests || (allResults.length > 5 && detailRequestsCompleted >= totalRequests * 0.5)) {
-                    const sortedResults = [...allResults].sort((a, b) => (b.rating || 0) - (a.rating || 0))
-                    sortedResults.forEach((r, idx) => r.index = idx + 1)
-                    setPlaces(sortedResults)
-                    setProcessedPlaceIds(newProcessedPlaceIds)
-                    setIsLoading(false)
-                  }
-                }
-              )
-            })
-
-            setTimeout(() => {
-              if (isLoading && allResults.length === 0) {
-                setError("Could not load details. Please try again later.")
-                setIsLoading(false)
-              }
-            }, 10000)
+                );
+              })
+            );
+            Promise.all(detailPromises).then((detailedPlaces) => {
+              const validPlaces = detailedPlaces.filter((p): p is Place => p !== null);
+              setPlaces((prevPlaces) => ({
+                ...prevPlaces,
+                [placeTypeInfo.category]: [...prevPlaces[placeTypeInfo.category], ...validPlaces].sort((a, b) => (b.rating || 0) - (a.rating || 0)),
+              }));
+              resolve();
+            });
+          } else if (status === window.google.maps.places.PlacesServiceStatus.ZERO_RESULTS) {
+            resolve();
           } else {
-            setError(`No ${placeTypes.find(pt => pt.id === searchType)?.label.toLowerCase() || "places"} found in ${location}. Please try another location.`)
-            setIsLoading(false)
+            reject(new Error(`Nearby search failed for ${placeTypeInfo.label} with status: ${status}`));
           }
-        })
-      } catch (err) {
-        setError(`Error fetching ${placeTypes.find(pt => pt.id === searchType)?.label.toLowerCase() || "places"}: ${(err as Error).message}`)
-        setIsLoading(false)
-      }
-    }
+        });
+      });
+    };
 
-    initMap()
+    initMap();
 
     if (isMapInitialized && searchLocation) {
-      const map = new window.google.maps.Map(document.createElement('div'))
-      const service = new window.google.maps.places.PlacesService(map)
-      fetchPlaces(service, searchLocation)
+      setIsLoading(true);
+      setPlaces({ Hotel: [], Restaurant: [], Homestay: [], Hostel: [], "Vacation Rental": [] });
+      const map = new window.google.maps.Map(document.createElement("div"));
+      const service = new window.google.maps.places.PlacesService(map);
+      const searchPromises = placeTypes.map((type) => fetchPlacesForType(service, searchLocation, type));
+
+      Promise.all(searchPromises).then(() => {
+        setIsLoading(false);
+      }).catch((err) => {
+        setError(`Error fetching places: ${(err as Error).message}`);
+        setIsLoading(false);
+      });
     }
 
     return () => {
-      markers.forEach(marker => marker.setMap(null))
-    }
-  }, [isMapInitialized, searchLocation, searchType])
+      markers.forEach((marker) => marker.setMap(null));
+    };
+  }, [isMapInitialized, searchLocation]);
 
   useEffect(() => {
-    if (isMapVisible && mapRef.current && places.length > 0) {
-      const map = new window.google.maps.Map(mapRef.current, {
-        center: selectedPlace?.geometry?.location || places[0]?.geometry?.location || { lat: 0, lng: 0 },
-        zoom: selectedPlace ? 16 : 14,
-        mapTypeId: "roadmap",
-        mapTypeControl: false,
-        streetViewControl: false,
-        fullscreenControl: false,
-        zoomControl: true,
-        styles: [
-          { featureType: "poi", elementType: "labels", stylers: [{ visibility: "off" }] },
-          { featureType: "water", elementType: "geometry", stylers: [{ color: "#e9e9e9" }, { lightness: 17 }] },
-          { featureType: "landscape", elementType: "geometry", stylers: [{ color: "#f5f5f5" }, { lightness: 20 }] }
-        ]
-      })
+    if (isMapVisible && mapRef.current) {
+      const allPlaces = Object.values(places).flat();
+      if (allPlaces.length > 0) {
+        const map = new window.google.maps.Map(mapRef.current, {
+          center: selectedPlace?.geometry?.location || searchLocation || { lat: 0, lng: 0 },
+          zoom: selectedPlace ? 16 : 13,
+          mapTypeId: "roadmap",
+          mapTypeControl: false,
+          streetViewControl: false,
+          fullscreenControl: false,
+          zoomControl: true,
+          styles: [
+            { featureType: "poi", elementType: "labels", stylers: [{ visibility: "off" }] },
+            { featureType: "water", elementType: "geometry", stylers: [{ color: "#e9e9e9" }, { lightness: 17 }] },
+            { featureType: "landscape", elementType: "geometry", stylers: [{ color: "#f5f5f5" }, { lightness: 20 }] },
+          ],
+        });
+        setMapInstance(map);
+        const infoWindowInstance = new window.google.maps.InfoWindow({
+          pixelOffset: new google.maps.Size(0, -10),
+        });
+        setInfoWindow(infoWindowInstance);
 
-      setMapInstance(map)
-      const infoWindowInstance = new window.google.maps.InfoWindow()
-      setInfoWindow(infoWindowInstance)
+        markers.forEach((marker) => marker.setMap(null));
+        setMarkers([]);
 
-      const placesToMark = selectedPlace ? [selectedPlace] : places
-      placesToMark.forEach(place => createMarker(place, map))
+        allPlaces.forEach((place) => createMarker(place, map));
 
-      if (selectedPlace && infoWindow) {
-        const marker = markers.find(m => m.getTitle() === selectedPlace.name)
-        if (marker) {
-          infoWindow.setContent(
-            `<div style="padding: 10px; max-width: 250px;">
-              <h3 style="font-weight: bold; margin-bottom: 6px; font-size: 16px;">${selectedPlace.name}</h3>
-              <p style="font-size: 13px; margin: 4px 0;">${selectedPlace.vicinity || selectedPlace.formatted_address || ""}</p>
-              <p style="font-size: 13px; margin: 4px 0;">Rating: ${selectedPlace.rating?.toFixed(1) || "N/A"} ⭐</p>
-              <p style="font-size: 13px; margin: 4px 0;">Reviews: ${selectedPlace.user_ratings_total || 0}</p>
-              ${selectedPlace.formatted_phone_number ? `<p style="font-size: 13px; margin: 4px 0;">Phone: ${selectedPlace.formatted_phone_number}</p>` : ""}
-            </div>`
-          )
-          infoWindow.open(map, marker)
+        if (selectedPlace) {
+          map.setCenter(selectedPlace.geometry.location);
+          map.setZoom(16);
         }
       }
     }
-  }, [isMapVisible, selectedPlace, places])
+  }, [isMapVisible, selectedPlace, places, searchLocation]);
 
-  const renderRatingStars = (rating?: number, interactive: boolean = false, onClickStar?: (star: number) => void) => {
-    const effectiveRating = rating ?? 0
-    const fullStars = Math.floor(effectiveRating)
-    const hasHalfStar = effectiveRating % 1 >= 0.5
-    const emptyStars = 5 - fullStars - (hasHalfStar ? 1 : 0)
-
+  const renderRatingStars = (rating?: number) => {
+    const effectiveRating = rating ?? 0;
+    const fullStars = Math.floor(effectiveRating);
+    const hasHalfStar = effectiveRating % 1 >= 0.5;
     return (
-      <div className="flex items-center space-x-1">
+      <div className="flex items-center">
         {[...Array(5)].map((_, i) => (
-          <button
+          <Star
             key={`star-${i}`}
-            onClick={interactive && onClickStar ? () => onClickStar(i + 1) : undefined}
-            className={`w-5 h-5 ${interactive ? 'cursor-pointer hover:scale-110 transition-transform' : ''}`}
-            disabled={!interactive}
-            aria-label={interactive ? `Set minimum rating to ${i + 1} stars` : undefined}
-          >
-            {i < fullStars ? (
-              <Star className="w-5 h-5 fill-yellow-400 text-yellow-400" />
-            ) : i === fullStars && hasHalfStar ? (
-              <span className="relative inline-block w-5 h-5">
-                <Star className="w-5 h-5 text-yellow-400" />
-                <Star
-                  className="absolute left-0 top-0 w-5 h-5 fill-yellow-400 text-yellow-400"
-                  style={{ clipPath: 'inset(0 50% 0 0)' }}
-                />
-              </span>
-            ) : (
-              <Star className="w-5 h-5 text-gray-200" />
-            )}
-          </button>
+            className={`w-4 h-4 ${i < fullStars ? "text-yellow-400 fill-yellow-400" : i === fullStars && hasHalfStar ? "text-yellow-400" : "text-gray-300"}`}
+            style={i === fullStars && hasHalfStar ? { clipPath: "inset(0 50% 0 0)" } : {}}
+          />
         ))}
-        {effectiveRating > 0 && (
-          <span className="ml-2 text-sm font-medium text-gray-600">{effectiveRating.toFixed(1)}</span>
-        )}
+        {effectiveRating > 0 && <span className="ml-1 text-xs text-gray-600">{effectiveRating.toFixed(1)}</span>}
       </div>
-    )
-  }
+    );
+  };
 
   const handlePlaceCardClick = (place: Place) => {
-    setSelectedPlace(place)
-    setPreviewPlace(place)
-  }
+    setPreviewPlace(place);
+    setShowAllReviews(false);
+  };
 
   const handleShowInMapClick = (place: Place, e: React.MouseEvent) => {
-    e.stopPropagation()
-    setSelectedPlace(place)
-    setIsMapVisible(true)
-  }
+    e.stopPropagation();
+    setSelectedPlace(place);
+    setIsMapVisible(true);
+  };
 
   const handleLocationSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!location.trim()) {
-      setError("Please enter a location.")
-      return
-    }
-    setIsLoading(true)
-    setError(null)
-    setPlaces([])
-    const map = new window.google.maps.Map(document.createElement('div'))
-    const service = new window.google.maps.places.PlacesService(map)
-    const request = {
-      query: location,
-      fields: ["name", "geometry"]
+    e.preventDefault();
+    if (!location.trim() || isLoading) return;
+    
+    setIsLoading(true);
+    setError(null);
+    setPlaces({ Hotel: [], Restaurant: [], Homestay: [], Hostel: [], "Vacation Rental": [] });
+    if (!isMapInitialized) {
+      setError("Map service is not available yet. Please wait a moment and try again.");
+      setIsLoading(false);
+      return;
     }
 
-    service.textSearch(request, (results, status) => {
-      if (status === window.google.maps.places.PlacesServiceStatus.OK && results && results.length > 0) {
-        const locationCoords = results[0].geometry?.location
-        setSearchLocation(locationCoords)
+    const service = new window.google.maps.places.PlacesService(document.createElement("div"));
+    service.textSearch({ query: location, fields: ["name", "geometry"] }, (results, status) => {
+      if (status === window.google.maps.places.PlacesServiceStatus.OK && results?.[0]?.geometry?.location) {
+        setSearchLocation(results[0].geometry.location);
       } else {
-        setError("Failed to find location. Please try another location.")
-        setIsLoading(false)
+        setError(`Could not find "${location}". Please try another location.`);
+        setIsLoading(false);
       }
-    })
-  }
+    });
+  };
 
-  const handleSearchTypeToggle = (type: string) => {
-    setSearchType(type)
-    setPlaces([])
-    setSelectedPlace(null)
-    setPreviewPlace(null)
-    setMarkers([])
-    if (searchLocation) {
-      setIsLoading(true)
-    }
-  }
+  const totalPlacesFound = Object.values(places).reduce((acc, curr) => acc + curr.length, 0);
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="container mx-auto px-4 py-12 relative">
-        <div className="text-center mb-12">
-          <h1 className="text-5xl font-extrabold text-gray-900 mb-4 tracking-tight">
-            Discover Places
-          </h1>
-          <p className="text-xl text-gray-600 max-w-3xl mx-auto leading-relaxed">
-            Explore curated accommodations and dining with traveler reviews
-          </p>
-        </div>
+    <div className="min-h-screen bg-gradient-to-b from-indigo-50 to-purple-50 font-sans">
+      <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-10 relative">
+        <header className="mb-8 text-center">
+          <h1 className="text-4xl md:text-5xl font-bold text-gray-900 mb-2 tracking-tight">Discover Your Journey</h1>
+          <p className="text-lg text-gray-600 max-w-xl mx-auto">Explore vibrant hotels, restaurants, and unique stays for your adventure.</p>
+        </header>
 
-        {/* Location Input Form */}
-        <div className="mb-12 bg-white rounded-2xl p-6 shadow-lg">
-          <h3 className="text-xl font-semibold text-gray-900 mb-6">Search Location</h3>
-          <form onSubmit={handleLocationSubmit} className="flex gap-4">
+        <div className="sticky top-4 z-30 py-3">
+          <form onSubmit={handleLocationSubmit} className="max-w-xl mx-auto flex gap-2 p-2 bg-white/90 backdrop-blur-sm rounded-full shadow-lg border border-gray-100">
             <input
               type="text"
               value={location}
               onChange={(e) => setLocation(e.target.value)}
-              placeholder="Enter a city or location (e.g., Pokhara, Nepal)"
-              className="flex-1 p-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              placeholder="e.g., Pokhara, Nepal"
+              className="flex-1 p-2 pl-4 bg-transparent border-none focus:ring-0 text-gray-700 placeholder-gray-400 text-sm"
             />
             <button
               type="submit"
-              className="bg-blue-600 text-white py-2 px-6 rounded-lg font-medium hover:bg-blue-700 transition-colors"
+              disabled={isLoading}
+              className="bg-gradient-to-r from-blue-500 to-indigo-500 text-white py-2 px-6 rounded-full font-medium hover:from-blue-600 hover:to-indigo-600 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-opacity-50 disabled:bg-blue-300 disabled:cursor-not-allowed"
             >
-              Search
+              {isLoading ? "Searching..." : "Search"}
             </button>
           </form>
         </div>
 
         {error && (
-          <div className="bg-red-50 border border-red-200 text-red-700 px-6 py-4 rounded-lg mb-8 shadow-sm">
-            <strong className="font-semibold">Error:</strong> {error}
+          <div className="max-w-xl mx-auto bg-red-100 border border-red-200 text-red-800 px-4 py-2 rounded-lg my-4 text-sm text-center">
+            <strong>Error:</strong> {error}
           </div>
         )}
 
-        {/* Floating Map Popup */}
         <button
           onClick={() => setIsMapVisible(!isMapVisible)}
-          className="fixed bottom-6 right-6 bg-blue-600 text-white p-3 rounded-full shadow-lg hover:bg-blue-700 transition-colors z-50"
+          className="fixed bottom-4 right-4 bg-gradient-to-r from-blue-500 to-indigo-500 text-white p-2 rounded-full shadow-lg hover:from-blue-600 hover:to-indigo-600 transition-colors z-50"
         >
-          {isMapVisible ? <X className="w-6 h-6" /> : <MapPin className="w-6 h-6" />}
+          {isMapVisible ? <X className="w-5 h-5" /> : <MapPin className="w-5 h-5" />}
         </button>
         {isMapVisible && (
-          <div className="fixed bottom-20 right-6 w-[400px] h-[400px] bg-white rounded-xl shadow-xl overflow-hidden z-50 transition-all duration-300">
-            <div ref={mapRef} className="w-full h-full"></div>
+          <div className="fixed bottom-16 right-4 w-[90vw] max-w-sm h-80 bg-white rounded-lg shadow-xl overflow-hidden z-30 border border-gray-100">
+            <div ref={mapRef} className="w-full h-full">
+              {!searchLocation && <div className="w-full h-full flex items-center justify-center bg-gray-100 text-gray-500 text-sm">Search for a location to display the map.</div>}
+            </div>
           </div>
         )}
 
-        {/* Places Section */}
-        <section ref={listingRef}>
-          <div className="flex items-center justify-between mb-8">
-            <div className="flex items-center space-x-4">
-              <h2 className="text-3xl font-bold text-gray-900">{placeTypes.find(pt => pt.id === searchType)?.label || "Places"}</h2>
-              <div className="flex flex-wrap gap-2">
-                {placeTypes.map(type => (
-                  <button
-                    key={type.id}
-                    onClick={() => handleSearchTypeToggle(type.id)}
-                    className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                      searchType === type.id
-                        ? "bg-blue-600 text-white"
-                        : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                    }`}
-                  >
-                    {type.label} {places.length > 0 && searchType === type.id ? `(${places.length})` : ""}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <span className="text-blue-600 font-medium">{places.length} {placeTypes.find(pt => pt.id === searchType)?.label.toLowerCase() || "places"} found</span>
-          </div>
-
+        <main className="mt-6">
           {isLoading ? (
-            <div className="flex items-center justify-center h-96">
-              <div className="text-center">
-                <svg className="animate-spin h-12 w-12 text-blue-600 mx-auto mb-4" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                </svg>
-                <p className="text-xl font-medium text-gray-700">Finding the best {placeTypes.find(pt => pt.id === searchType)?.label.toLowerCase() || "places"}...</p>
-              </div>
+            <div className="text-center py-12">
+              <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-indigo-500 mx-auto"></div>
+              <p className="mt-3 text-sm text-gray-600">Discovering places for you...</p>
             </div>
-          ) : places.length > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-              {places.slice(0, 12).map((place) => (
-                <div
-                  key={place.place_id}
-                  id={`place-${place.place_id}`}
-                  onClick={() => handlePlaceCardClick(place)}
-                  className="bg-white rounded-2xl shadow-lg overflow-hidden hover:shadow-xl transition-all duration-300 cursor-pointer"
-                >
-                  <div className="relative h-64">
-                    <img
-                      src={place.photos?.[0]?.getUrl({ maxWidth: 600, maxHeight: 400 }) || "https://images.unsplash.com/photo-1566073771259-6a8506099945"}
-                      alt={place.name}
-                      className="w-full h-full object-cover transition-transform duration-300 hover:scale-105"
-                      onError={(e) => {
-                        e.currentTarget.src = "https://images.unsplash.com/photo-1566073771259-6a8506099945"
-                      }}
-                    />
-                  </div>
-                  <div className="p-6">
-                    <div className="flex justify-between items-start mb-3">
-                      <h3 className="font-bold text-xl text-gray-900">{place.name}</h3>
-                      <span className="bg-blue-100 text-blue-800 text-xs font-medium px-2.5 py-1 rounded-lg">{place.category}</span>
-                    </div>
-                    {renderRatingStars(place.rating)}
-                    <div className="space-y-3 mt-4">
-                      <div className="flex items-center text-gray-600 text-sm">
-                        <MapPin className="h-4 w-4 mr-2 text-blue-500" />
-                        <span className="truncate">{place.vicinity || place.formatted_address || "Address not available"}</span>
-                      </div>
-                      {place.formatted_phone_number && (
-                        <div className="flex items-center text-gray-600 text-sm">
-                          <Phone className="h-4 w-4 mr-2 text-blue-500" />
-                          <a href={`tel:${place.formatted_phone_number}`} className="hover:text-blue-600">{place.formatted_phone_number}</a>
-                        </div>
-                      )}
-                    </div>
-                    <div className="mt-6 flex justify-between items-center">
-                      <button
-                        onClick={(e) => handleShowInMapClick(place, e)}
-                        className="bg-blue-100 text-blue-800 py-2 px-4 rounded-lg text-sm font-medium hover:bg-blue-200 transition-colors duration-200"
-                      >
-                        Show in Map
-                      </button>
-                      {place.website && (
-                        <a
-                          href={place.website}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          onClick={(e) => e.stopPropagation()}
-                          className="bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded-lg text-sm font-medium transition-colors duration-200"
-                        >
-                          Book Now
-                        </a>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="bg-white rounded-2xl p-10 text-center shadow-lg">
-              <p className="text-gray-600 text-lg font-medium">No {placeTypes.find(pt => pt.id === searchType)?.label.toLowerCase() || "places"} found.</p>
-              <p className="text-gray-500 mt-2">Try searching for a different location.</p>
-            </div>
-          )}
-        </section>
-
-        {/* Place Preview Modal */}
-        {previewPlace && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto shadow-2xl">
-              <div className="relative">
-                <button
-                  onClick={() => setPreviewPlace(null)}
-                  className="absolute top-4 right-4 bg-white/80 p-2 rounded-full shadow hover:bg-white"
-                >
-                  <X className="w-6 h-6 text-gray-600" />
-                </button>
-                <img
-                  src={previewPlace.photos?.[0]?.getUrl({ maxWidth: 1200, maxHeight: 600 }) || "https://images.unsplash.com/photo-1566073771259-6a8506099945"}
-                  alt={previewPlace.name}
-                  className="w-full h-96 object-cover rounded-t-2xl"
-                  onError={(e) => {
-                    e.currentTarget.src = "https://images.unsplash.com/photo-1566073771259-6a8506099945"
-                  }}
+          ) : totalPlacesFound > 0 ? (
+            <>
+              {placeTypes.map((typeInfo) => (
+                <PlaceCategoryRow
+                  key={typeInfo.id}
+                  typeInfo={typeInfo}
+                  places={places[typeInfo.category]}
+                  onPlaceClick={handlePlaceCardClick}
+                  onShowInMapClick={handleShowInMapClick}
                 />
+              ))}
+            </>
+          ) : (
+            searchLocation && !isLoading && (
+              <div className="text-center py-12 bg-white rounded-lg shadow-sm max-w-xl mx-auto">
+                <h3 className="text-lg font-medium text-gray-800">No places found.</h3>
+                <p className="text-gray-500 text-sm mt-1">Your search for "{location}" didn't return any results. Try a different location.</p>
               </div>
-              <div className="p-8">
-                <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-3xl font-bold text-gray-900">{previewPlace.name}</h2>
-                  <h3 className="text-xl font-semibold text-gray-900">Guest Reviews</h3>
+            )
+          )}
+        </main>
+
+        {previewPlace && (
+          <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4 transition-opacity duration-300">
+            <div ref={modalRef} className="bg-white rounded-xl max-w-xl w-full max-h-[70vh] overflow-y-auto shadow-xl flex flex-col">
+              <div className="relative">
+                <img
+                  src={previewPlace.photos?.[0]?.getUrl({ maxWidth: 800, maxHeight: 300 }) || "https://images.unsplash.com/photo-1566073771259-6a8506099945"}
+                  alt={previewPlace.name}
+                  className="w-full h-48 object-cover rounded-t-xl"
+                />
+                <button onClick={() => setPreviewPlace(null)} className="absolute top-2 right-2 bg-black/60 p-1.5 rounded-full hover:bg-black/80 transition-colors">
+                  <X className="w-4 h-4 text-white" />
+                </button>
+                <div className="absolute bottom-0 left-0 p-3 bg-gradient-to-t from-black/60 to-transparent w-full">
+                  <h2 className="text-lg font-semibold text-white truncate">{previewPlace.name}</h2>
                 </div>
-                <div className="flex items-center mb-6">
+              </div>
+              <div className="p-4 flex-grow">
+                <div className="flex items-center mb-2">
                   {renderRatingStars(previewPlace.rating)}
-                  <span className="ml-2 text-gray-500">({previewPlace.user_ratings_total || 0} reviews)</span>
+                  <span className="ml-2 text-xs text-gray-500">({previewPlace.user_ratings_total || 0} reviews)</span>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="space-y-4">
-                    <div className="flex items-center text-gray-600">
-                      <MapPin className="h-5 w-5 mr-2 text-blue-500" />
-                      <span>{previewPlace.vicinity || previewPlace.formatted_address || "Address not available"}</span>
-                    </div>
-                    {previewPlace.formatted_phone_number && (
-                      <div className="flex items-center text-gray-600">
-                        <Phone className="h-5 w-5 mr-2 text-blue-500" />
-                        <a href={`tel:${previewPlace.formatted_phone_number}`} className="hover:text-blue-600">
-                          {previewPlace.formatted_phone_number}
-                        </a>
-                      </div>
-                    )}
-                    {previewPlace.website && (
-                      <a
-                        href={previewPlace.website}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-block bg-blue-600 hover:bg-blue-700 text-white py-2 px-6 rounded-lg font-medium mt-4"
-                      >
-                        Book Now
+                <div className="space-y-2 text-gray-700 text-xs">
+                  <div className="flex items-center">
+                    <MapPin className="h-4 w-4 mr-2 text-gray-400 flex-shrink-0" />
+                    <span className="line-clamp-1">{previewPlace.vicinity || previewPlace.formatted_address || "Address not available"}</span>
+                  </div>
+                  {previewPlace.formatted_phone_number && (
+                    <div className="flex items-center">
+                      <Phone className="h-4 w-4 mr-2 text-gray-400" />
+                      <a href={`tel:${previewPlace.formatted_phone_number}`} className="hover:text-indigo-600 text-xs">
+                        {previewPlace.formatted_phone_number}
                       </a>
-                    )}
-                  </div>
-                  <div className="space-y-4">
+                    </div>
+                  )}
+                </div>
+                <div className="mt-4">
+                  <h3 className="text-sm font-medium text-gray-800 mb-2 border-b pb-1">Guest Reviews</h3>
+                  <div className="space-y-3">
                     {previewPlace.reviews && previewPlace.reviews.length > 0 ? (
-                      <div className="space-y-4 max-h-96 overflow-y-auto">
-                        {previewPlace.reviews.slice(0, 5).map((review, index) => (
-                          <div key={index} className="bg-gray-50 p-4 rounded-lg shadow-sm transition-all duration-200 hover:shadow-md">
-                            <div className="flex items-center justify-between mb-2">
-                              <h4 className="font-medium text-gray-800">{review.author_name}</h4>
-                              <span className="text-sm text-gray-500">{review.relative_time_description}</span>
-                            </div>
-                            <div className="mb-2">{renderRatingStars(review.rating)}</div>
-                            <p className="text-gray-600 text-sm line-clamp-3">{review.text}</p>
-                            {review.text.length > 150 && (
-                              <button
-                                onClick={() => alert(review.text)}
-                                className="text-blue-600 text-sm font-medium hover:underline mt-1"
-                              >
-                                Read more
-                              </button>
-                            )}
+                      <>
+                        <div className="bg-gray-50 p-2 rounded-md border border-gray-100">
+                          <div className="flex items-center justify-between mb-1">
+                            <h4 className="font-medium text-xs text-gray-800">{previewPlace.reviews[0].author_name}</h4>
+                            <span className="text-xs text-gray-500">{previewPlace.reviews[0].relative_time_description}</span>
                           </div>
-                        ))}
-                      </div>
+                          <div className="mb-1">{renderRatingStars(previewPlace.reviews[0].rating)}</div>
+                          <p className="text-gray-600 text-xs line-clamp-2">{previewPlace.reviews[0].text}</p>
+                          {previewPlace.reviews[0].text.length > 100 && (
+                            <button
+                              onClick={() => alert(previewPlace.reviews[0].text)}
+                              className="text-indigo-600 text-xs hover:underline mt-1"
+                            >
+                              Read more
+                            </button>
+                          )}
+                        </div>
+                        {previewPlace.reviews.length > 1 && (
+                          <button
+                            onClick={() => setShowAllReviews(!showAllReviews)}
+                            className="text-indigo-600 text-xs font-medium hover:underline"
+                          >
+                            {showAllReviews ? "Hide Reviews" : `Show ${previewPlace.reviews.length - 1} more reviews`}
+                          </button>
+                        )}
+                        {showAllReviews &&
+                          previewPlace.reviews.slice(1).map((review, index) => (
+                            <div key={index} className="bg-gray-50 p-2 rounded-md border border-gray-100 animate-fade-in">
+                              <div className="flex items-center justify-between mb-1">
+                                <h4 className="font-medium text-xs text-gray-800">{review.author_name}</h4>
+                                <span className="text-xs text-gray-500">{review.relative_time_description}</span>
+                              </div>
+                              <div className="mb-1">{renderRatingStars(review.rating)}</div>
+                              <p className="text-gray-600 text-xs line-clamp-2">{review.text}</p>
+                              {review.text.length > 100 && (
+                                <button
+                                  onClick={() => alert(review.text)}
+                                  className="text-indigo-600 text-xs hover:underline mt-1"
+                                >
+                                  Read more
+                                </button>
+                              )}
+                            </div>
+                          ))}
+                      </>
                     ) : (
-                      <p className="text-gray-500 italic">No reviews available for this {previewPlace.category.toLowerCase()}.</p>
+                      <p className="text-gray-500 italic text-xs">No reviews available.</p>
                     )}
                   </div>
                 </div>
+              </div>
+              <div className="p-3 bg-gray-50 rounded-b-xl flex justify-end items-center space-x-2">
+                <button
+                  onClick={(e) => {
+                    handleShowInMapClick(previewPlace, e);
+                    setPreviewPlace(null);
+                  }}
+                  className="bg-gray-200 hover:bg-gray-300 text-gray-800 py-1.5 px-3 rounded-md font-medium text-xs transition-colors"
+                >
+                  Show on Map
+                </button>
+                {previewPlace.website && (
+                  <a
+                    href={previewPlace.website}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className={`bg-${placeTypes.find((pt) => pt.category === previewPlace.category)?.color} hover:bg-${placeTypes.find((pt) => pt.category === previewPlace.category)?.color.replace("500", "600")} text-white py-1.5 px-4 rounded-md font-medium text-xs transition-colors`}
+                  >
+                    Book Now
+                  </a>
+                )}
               </div>
             </div>
           </div>
         )}
       </div>
     </div>
-  )
-}
+  );
+};
 
-export default HotelExplorer
+export default HotelExplorer;

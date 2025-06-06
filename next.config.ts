@@ -4,8 +4,8 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   images: {
-    domains: ["maps.googleapis.com"], 
+    domains: ["maps.googleapis.com", "images.unsplash.com"],
   },
 };
 
-export default nextConfig;
+export default nextConfig; // Don't forget to export nextConfig!
