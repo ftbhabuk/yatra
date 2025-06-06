@@ -18,7 +18,7 @@ const Page = () => {
       <p className='xl'>hello world </p>
      </div>
      <div>
-     {/* <HotelExplorer/> */}
+     <HotelExplorer/>
       <p className='xl'>hello world </p>
      </div>
     </div>
