@@ -1,4 +1,3 @@
-// app/api/route.ts
 import Exa from 'exa-js';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { NextRequest } from 'next/server';
@@ -30,7 +29,6 @@ interface Attraction {
   name: string;
   rating: string;
   vicinity: string;
-  photo: string | null;
 }
 
 interface GoogleMapsSearchResult {
@@ -49,9 +47,6 @@ interface GoogleMapsPlace {
   name: string;
   rating?: number;
   vicinity: string;
-  photos?: Array<{
-    photo_reference: string;
-  }>;
 }
 
 interface GoogleMapsNearbyResult {
@@ -154,11 +149,14 @@ const cacheGuide = async (place: string, aiContent: string, sources: Source[]) =
   }
 };
 
-async function fetchMapsAttractions(place: string): Promise<{ attractions: Attraction[]; coordinates: string | null }> {
+async function fetchMapsData(place: string): Promise<{ attractions: Attraction[]; coordinates: string | null }> {
   const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
   const mapsData: { attractions: Attraction[]; coordinates: string | null } = { attractions: [], coordinates: null };
+
   try {
     if (!apiKey) throw new Error('Google Maps API key is missing');
+
+    // Step 1: Search for the destination to get place ID and coordinates
     const searchUrl = `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(place + ' Nepal')}&key=${apiKey}`;
     const searchResponse = await axios.get<GoogleMapsSearchResult>(searchUrl);
     const result = searchResponse.data.results[0];
@@ -166,20 +164,23 @@ async function fetchMapsAttractions(place: string): Promise<{ attractions: Attra
       console.warn('No place ID found for place:', place);
       return mapsData;
     }
+
     const location = result.geometry.location;
     mapsData.coordinates = `${location.lat},${location.lng}`;
-    const nearbyUrl = `https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=${location.lat},${location.lng}&radius=5000&type=tourist_attraction&key=${apiKey}`;
-    const attractionsResponse = await axios.get<GoogleMapsNearbyResult>(nearbyUrl);
+
+    // Step 2: Fetch nearby attractions
+    const nearbyUrl = `https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=${location.lat},${location.lng}&radius=5000&key=${apiKey}`;
+    const attractionsResponse = await axios.get<GoogleMapsNearbyResult>(`${nearbyUrl}&type=tourist_attraction`);
     mapsData.attractions = attractionsResponse.data.results.slice(0, 5).map((place: GoogleMapsPlace) => ({
       name: place.name,
       rating: place.rating?.toString() || 'N/A',
       vicinity: place.vicinity,
-      photo: place.photos?.[0]?.photo_reference ? `https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photoreference=${place.photos[0].photo_reference}&key=${apiKey}` : null,
     }));
-    console.log('Fetched attractions:', mapsData.attractions);
+
+    console.log('Fetched maps data:', mapsData);
     return mapsData;
   } catch (error) {
-    console.error('Error fetching Google Maps attractions:', error);
+    console.error('Error fetching Google Maps data:', error);
     return mapsData;
   }
 }
@@ -287,11 +288,20 @@ const getOrCreateChunks = async (place: string, genAI: GoogleGenerativeAI) => {
 export async function POST(request: NextRequest) {
   try {
     const startTime = Date.now();
-    const { place } = await request.json();
+    const {
+      destination,
+      duration,
+      startDate,
+      endDate,
+      dateFlexibility,
+      preferredSeason,
+      travelCompanion,
+      customInfo,
+    } = await request.json();
     console.log(`[Timing] Request parsing: ${Date.now() - startTime}ms`);
 
-    if (!place) {
-      return Response.json({ error: 'Place parameter is required' }, { status: 400 });
+    if (!destination) {
+      return Response.json({ error: 'Destination parameter is required' }, { status: 400 });
     }
 
     const missingKeys = [];
@@ -304,14 +314,14 @@ export async function POST(request: NextRequest) {
     }
 
     const searchUrls = {
-      wikipedia: `https://en.wikipedia.org/w/index.php?search=${encodeURIComponent(place + ' Nepal')}`,
-      tripadvisor: `https://www.tripadvisor.com/Search?q=${encodeURIComponent(place + ' Nepal')}`,
-      lonelyPlanet: `https://www.lonelyplanet.com/search?q=${encodeURIComponent(place + ' Nepal')}`,
-      googleMaps: `https://www.google.com/maps/search/${encodeURIComponent(place + ' Nepal')}`,
+      wikipedia: `https://en.wikipedia.org/w/index.php?search=${encodeURIComponent(destination + ' Nepal')}`,
+      tripadvisor: `https://www.tripadvisor.com/Search?q=${encodeURIComponent(destination + ' Nepal')}`,
+      lonelyPlanet: `https://www.lonelyplanet.com/search?q=${encodeURIComponent(destination + ' Nepal')}`,
+      googleMaps: `https://www.google.com/maps/search/${encodeURIComponent(destination + ' Nepal')}`,
     };
 
     let stepTime = Date.now();
-    const cachedGuide = await getCachedGuide(place);
+    const cachedGuide = await getCachedGuide(destination);
     console.log(`[Timing] Check cache: ${Date.now() - stepTime}ms`);
     if (cachedGuide) {
       return Response.json({
@@ -319,37 +329,73 @@ export async function POST(request: NextRequest) {
         sources: JSON.parse(String(cachedGuide.sources)),
         fromCache: true,
         cachedAt: cachedGuide.createdAt,
-        debug: { place, ...searchUrls },
+        debug: { destination, ...searchUrls },
       });
     }
 
     stepTime = Date.now();
     const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY as string);
-    const topChunks = await getOrCreateChunks(place, genAI);
+    const topChunks = await getOrCreateChunks(destination, genAI);
     console.log(`[Timing] Get or create chunks: ${Date.now() - stepTime}ms`);
     if (!topChunks.length) {
-      return Response.json({ error: `No information found for "${place}, Nepal"`, ...searchUrls }, { status: 404 });
+      return Response.json({ error: `No information found for "${destination}, Nepal"`, ...searchUrls }, { status: 404 });
     }
 
     stepTime = Date.now();
-    const mapsData = await fetchMapsAttractions(place);
-    console.log(`[Timing] Fetch Maps attractions: ${Date.now() - stepTime}ms`);
+    const mapsData = await fetchMapsData(destination);
+    console.log(`[Timing] Fetch Maps data: ${Date.now() - stepTime}ms`);
 
     const formattedContent = topChunks.map((chunk) => `SOURCE: ${chunk.url}\nTITLE: ${chunk.title}\nRELEVANCE: ${chunk.similarity.toFixed(4)}\nCONTENT:\n${chunk.content}\n---`).join('\n\n');
 
     stepTime = Date.now();
     const generativeModel = genAI.getGenerativeModel({ model: 'gemini-2.0-flash-lite' });
-    const prompt = `
-Provide a travel plan in valid JSON format:
+    
+    let prompt = `
+Act as a professional travel planner specializing in Nepal with a vibrant, storytelling tone that paints vivid pictures for travelers.
+
+CRITICAL INSTRUCTION: You MUST create a trip plan for EXACTLY this
+destination: "${destination}". Do NOT substitute it or change it.
+
+Trip Details:
+- Destination: ${destination}
+- Duration: ${duration} days
+- Start Date: ${startDate || 'Not specified'}
+- End Date: ${endDate || 'Not specified'}
+- Date Flexibility: ${dateFlexibility || 'Not specified'}
+- Preferred Season: ${preferredSeason || 'Not specified'}
+- Travel Group: ${travelCompanion || 'Not specified'}
+- Custom Information: ${customInfo || 'None'}
+
+GOOGLE MAPS DATA:
+- Coordinates: ${mapsData.coordinates || 'Not available'}
+- Attractions: ${mapsData.attractions
+  .map(
+    (a) =>
+      `${a.name}: Rating ${a.rating}, Location ${a.vicinity}`
+  )
+  .join(" | ") || "None found"}
+
+Use this content:
+${formattedContent}
+
+Provide a comprehensive travel plan in valid JSON format:
 {
   "tripOverview": {
-    "destination": "${place}",
-    "days": 1
+    "destination": "${destination}",
+    "duration": ${duration || 1},
+    "bestTimeToVisit": string,
+    "weatherInfo": string,
+    "coordinates": string,
+    "overviewText": string,
+    "culturalHighlights": string[],
+    "naturalWonders": string[],
+    "uniqueExperiences": string[]
   },
   "dailyItinerary": [
     {
       "day": number,
       "date": string,
+      "theme": string,
       "activities": [
         {
           "time": string,
@@ -357,26 +403,170 @@ Provide a travel plan in valid JSON format:
           "location": string,
           "duration": string,
           "cost": number,
+          "difficulty": string,
+          "category": string,
+          "visualDescription": string,
+          "culturalContext": string,
+          "photoOpportunities": string[],
           "notes": string,
           "description": string
         }
+      ],
+      "dayHighlight": string,
+      "energyLevel": string
+    }
+  ],
+  "transportation": {
+    "fromAirport": {
+      "options": [
+        {
+          "method": string,
+          "duration": string,
+          "cost": number,
+          "description": string,
+          "scenery": string
+        }
+      ]
+    },
+    "localTransport": {
+      "options": [
+        {
+          "method": string,
+          "cost": number,
+          "bestFor": string,
+          "experience": string
+        }
       ]
     }
-  ]
+  },
+  "sensoryExperiences": {
+    "sounds": string[],
+    "sights": string[],
+    "smells": string[],
+    "tastes": string[],
+    "textures": string[]
+  },
+  "weatherAndClothing": {
+    "expectedWeather": string,
+    "layeringTips": string[],
+    "footwear": string[],
+    "accessories": string[]
+  },
+  "budgetBreakdown": {
+    "activities": number,
+    "transportation": number,
+    "miscellaneous": number,
+    "total": number,
+    "budgetTips": string[]
+  },
+  "essentialInfo": {
+    "emergencyContacts": {
+      "police": string,
+      "ambulance": string,
+      "nearestHospital": string,
+      "touristHelpline": string
+    },
+    "localCustoms": [
+      {
+        "custom": string,
+        "explanation": string,
+        "importance": string
+      }
+    ],
+    "packingList": [
+      {
+        "item": string,
+        "category": string,
+        "priority": string,
+        "reason": string
+      }
+    ],
+    "visaRequirements": string,
+    "safetyTips": string[],
+    "languagePhrases": [
+      {
+        "english": string,
+        "nepali": string,
+        "pronunciation": string
+      }
+    ]
+  },
+  "hiddenGems": [
+    {
+      "name": string,
+      "description": string,
+      "bestTimeToVisit": string,
+      "howToFind": string
+    }
+  ],
+  "seasonalConsiderations": {
+    "currentSeason": string,
+    "advantages": string[],
+    "challenges": string[],
+    "alternatives": string[]
+  }
 }
 
-Guidelines:
-5. Detailed daily itinerary blending Things to Do from content and Maps attractions.
-6. In description of daily itinerary, include the description to describe the place and the activity to do in detail and the cost of the activity.
-7. Return ONLY the JSON object, no extra text.
+Enhanced Guidelines:
+1. Structure the itinerary with daily themes (e.g., "Cultural Immersion Day", "Nature Explorer Day", "Adventure Day"):
+   - Day 1: "Arrival & First Impressions" - Include sensory details of arriving (sounds, smells, first sights)
+   - Middle days: Themed around different aspects (culture, nature, adventure, spirituality)
+   - Last day: "Farewell & Reflections" - Include meaningful departure activities
 
-GOOGLE MAPS DATA:
-- Coordinates: ${mapsData.coordinates || 'Not available'}
-- Attractions: ${mapsData.attractions.map((a) => `${a.name}: Rating ${a.rating}, Location ${a.vicinity}, Image ${a.photo || 'None'}`).join(' | ') || 'None found'}
+2. For visualDescription in each activity, create cinema-like descriptions (75-100 words) that help travelers visualize:
+   - What they'll see in detail (colors, shapes, movement)
+   - The atmosphere and mood of the place
+   - How light changes throughout the day
+   - The scale and perspective of landmarks
 
-Use this content:
-${formattedContent}
+3. Include culturalContext for each activity explaining:
+   - Historical significance
+   - Local beliefs or traditions
+   - Why locals value this place
+   - Stories or legends associated
+
+4. For photoOpportunities, specify exact spots and best times:
+   - "Golden hour shots from the temple's eastern steps"
+   - "Panoramic views best captured around 3 PM"
+   - "Traditional market colors pop in morning light"
+
+5. Sensory experiences should transport the reader:
+   - Sounds: temple bells, mountain winds, bustling markets
+   - Sights: specific colors, textures, architectural details
+   - Smells: incense, mountain air, local food aromas
+   - Tastes: brief mentions of local flavors they'll encounter
+   - Textures: stone carvings, prayer flags, mountain paths
+
+6. Hidden gems should be truly local and specific:
+   - Places not in typical guidebooks
+   - Local viewpoints or gathering spots
+   - Traditional craftsmen workshops
+   - Quiet spiritual spots known to locals
+
+7. Make transportation descriptions experiential:
+   - What scenery unfolds during the journey
+   - How the landscape changes
+   - Cultural observations during travel
+
+8. Budget breakdown should be realistic and helpful:
+   - Specific cost ranges for each category
+   - Money-saving tips that don't compromise experience
+   - When to spend more for better experience
+
+9. Language phrases should be practical and culturally sensitive:
+   - Greetings appropriate for different times/people
+   - Essential phrases for navigation and courtesy
+   - Emergency phrases
+
+10. Activity categories: "Cultural", "Nature", "Adventure", "Spiritual", "Local Life", "Photography"
+
+11. Difficulty levels: "Easy", "Moderate", "Challenging" with brief explanations
+
+12. Energy levels per day: "Relaxed", "Moderate", "High Energy" to help with pacing
+
+Return ONLY the JSON object with this enhanced structure, ensuring every field adds meaningful value for trip visualization and planning.
 `;
+    
     const result = await generativeModel.generateContent({
       contents: [{ role: 'user', parts: [{ text: prompt }] }],
       generationConfig: { temperature: 0.5, maxOutputTokens: 4096 },
@@ -390,7 +580,7 @@ ${formattedContent}
 
     stepTime = Date.now();
     const sources = topChunks.map((chunk) => ({ url: chunk.url, title: chunk.title, similarity: chunk.similarity }));
-    await cacheGuide(place, aiContent, sources);
+    await cacheGuide(destination, aiContent, sources);
     console.log(`[Timing] Cache guide: ${Date.now() - stepTime}ms`);
 
     console.log(`[Timing] Total time: ${Date.now() - startTime}ms`);
@@ -398,7 +588,7 @@ ${formattedContent}
       result: aiContent,
       sources,
       fromCache: false,
-      debug: { place, totalChunks: topChunks.length, ...searchUrls },
+      debug: { destination, totalChunks: topChunks.length, ...searchUrls },
     });
   } catch (error) {
     console.error('API Error:', error);

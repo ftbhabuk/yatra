@@ -205,7 +205,7 @@ const HotelExplorer = () => {
       }
     };
     document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("m`ousedown", handleClickOutside);
   }, []);
 
   const createMarker = (place: Place, map: GoogleMap) => {

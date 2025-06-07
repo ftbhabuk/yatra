@@ -102,7 +102,7 @@ const CreateTripPage = () => {
 
     try {
       const formData = {
-        place: destination.trim(),
+        destination: destination.trim(), // Changed from 'place' to 'destination'
         duration: durationNumber,
         startDate: startDate?.toISOString() || null,
         endDate: endDate?.toISOString() || null,
@@ -111,7 +111,6 @@ const CreateTripPage = () => {
         travelCompanion: travelCompanion || null,
         customInfo: customInfo.trim() || null,
       };
-
       console.log("Sending formData to API:", formData);
 
       // Make API call to your backend
